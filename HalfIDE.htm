@@ -1,0 +1,445 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="en">
+<head>
+<title>HalfIDE protocol rev. 1.0</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="author" content="Michele Alessandrini">
+</head>
+<body>
+
+
+<h1>HalfIDE protocol specification</h1>
+<blockquote>"The Makefile is half the IDE"</blockquote>
+<hr>
+<p>Author: Michele Alessandrini
+<p>Revision: 1.0
+<p>Last edited: 2015-04-21
+<p>
+
+
+<h1>Introduction</h1>
+
+<p>The rationale for this project can be illustrated by the following scenario.
+<p>You are a programmer, and you like writing your own Makefiles. Your Makefiles are quite complex, and carry out many tasks automatically.
+You define many variables and use many functions, so that the compilation process adapts automatically by simply adding a file or redefining a list of values.
+Your Makefiles enclose all the complexity of your projects, and you use nothing more than them, an editor and the shell.
+And you're very happy with that workflow that gives you full control.
+<p>On the other hand, when your projects become quite complex, you miss a real IDE, where you can have auto-completion,
+or you can find the definition of a symbol with a simple mouse click, and the like. But if you want the full power from an IDE, you must do things its way: all the options must be set in the IDE's own interface, and control is taken away from you. You lose the flexibility of a Makefile, where you have another actual programming language. Moreover, if you want to change the IDE, you have to change all over again. And you probably tried several times to keep your Makefile and an IDE synchronized, to use both at your needs, but you gave up the effort.
+<p>Now, wouldn't it be good if the IDEs could adapt to your Makefile? That is, the project was defined by your Makefile only, and the IDEs got all the information they need from it?
+<p>This is what I'm attempting to do with HalfIDE. HalfIDE is what I would define a "standard" that I'm proposing to implement the
+flow of information from a Makefile to an IDE, by means of calling the Makefile with a special target ("HalfIDE") and get a series of textual information, that the IDE (no matter what IDE) can parse and use to setup itself.
+<p>In my vision, the Makefile would be the one and only project file, and the IDE should not add any additional files to your source tree that you need to keep around, often without being sure of their portability.
+<p>In this document I shall define the technical details of the HalfIDE interface. I'm also providing a dummy project with a Makefile implementing the protocol, and a fake, incomplete IDE managing it, just to show how everything should work. This is not, by any means, an effort to implement yet another IDE. What I would really like is that popular IDEs implemented such protocol and offered the user to manage an HalfIDE project, just like all the other kind of projects they usually manage.
+<p>This specification is oriented to C/C++, but I think this protocol might be extended to everything can be managed by a Makefile.
+<p>This is revision 1.0 of the protocol. The terms "must" and "should" are used as usually in a standard proposal.
+<p>I'd like this location to be the reference version of this standard. If someone else is interested to contribute, I would be happy to evaluate other ideas to extend or fix it in all the ways I could not anticipate here.
+
+
+
+
+<h1>The HalfIDE protocol</h1>
+<p>An IDE asks the Makefile the information about the project by calling the make program on the Makefile provided by the user with the special "HalfIDE" target, and by parsing the resulting textual output. The Makefile must define that target, that will typically look like this:
+<pre>
+HalfIDE:
+	@echo  param_name_1  values...
+	@echo  param_name_2  values...
+	...
+</pre>
+<p>Every row prints a parameter name, followed by zero or more arguments, separated by whitespaces. "Echo" commands are prepended with "@" to avoid printing the command itself, together with its output.
+<p>The HalfIDE target should also be declared phony, to avoid problems in the rare case a file with that name actually exists
+(see <a href="https://www.gnu.org/software/make/manual/html_node/Phony-Targets.html">here</a>.)
+<p>Other commands can be used, as long as the correct textual output is printed on the standard output. For example, the command:
+<pre>
+HalfIDE:
+	@echo  param_name_1  value1  value2
+</pre>
+will print:
+<pre>
+param_name_1  value1  value2
+</pre>
+<p>Care must be used if a value contains characters that would be interpreted by the shell. For example, we will see that several parameters expect values
+composed by tokens separated by the "|" character. By writing the echo command like the above example, the shell would return an error because it would try to interpret the "|" command. In this case the value can be enclosed in double quotes:
+<pre>
+HalfIDE:
+	@echo  param_name_1  "value1|argument1"  value2
+</pre>
+<p>This will actually print:
+<pre>
+param_name_1  value1|argument1  value2
+</pre>
+that is what is correctly expected by the parser. Notice that the double quotes have been interpreted by the shell and removed.
+<p>If one of the value contains whitespaces, it must be enclosed in double quotes and the parser must treat it like a single value. For simplicity it's not possible to include the double quote character itself inside the value via escaping. Notice that, in order for the echo command to print a double quote, it must be escaped so it's not removed by the shell. This example:
+<pre>
+HalfIDE:
+	@echo  param_name_1  "\"first value|argument1\""  value2
+</pre>
+will correctly print:
+<pre>
+param_name_1  "first value|argument1"  value2
+</pre>
+so the IDE can correctly parse it. The outer actual quotes were needed in the Makefile for the presence of the "|" character. Notice that the parser must remove the double quotes from the parsed value.
+<p>It's suggested to try to manually call the HalfIDE target and test the correctness of the output.
+<p>As it will be seen from the examples, the real power of this Makefile's target is that the values provided don't have to be fixed, but can be computed as a result of other variables, and might completely change by calling the Makefile with different variables redefined.
+<p>The existing parameters and their semantics will be defined below, referring only to the text output by the Makefile, irrespective of the commands used to output it. But before that, we shall clarify some basic concepts.
+
+<h2>The Makefile file</h2>
+<p>The Makefile file name must be provided by the user, as the "project file" to be used. It can be opened from inside the IDE with a file-open dialog, or can be provided on the command-line as an argument to the IDE program. The IDE must always convert the Makefile path to an absolute path if it's not already.
+
+<h2>The "default directory" and the "source base directory"</h2>
+<p>The directory containing the Makefile shall be the "default directory" of the project. If any file is provided as a relative path, its path must be interpreted relative to the Makefile's directory.
+In addition to the default directory, one of the parameters provided by the HalfIDE protocol is the "source base directory", that is the directory to be considered the root path of all the files contained in the project, excluding the Makefile itself.
+<p>The HalfIDE protocol allows the Makefile to be in a different directory than the sources, for example in a "build"
+subdirectory, or anywhere else. When providing the list of files comprising the project, any of them can be given in relative or absolute path. If relative, a path is interpreted as said, relative to the Makefiles's directory, and can contain the ".." component.
+The absolute path of a given file, as already given or obtained in terms of the default directory, may or may not start with the source base directory, see the next subsection.
+
+<h2>Internal and external files</h2>
+<p>For every file composing the project, irrespective of absolute or relative path, the IDE must distinguish if a file resides in the source base directory (or one of its subdirectories) or not. In the former case the file is considered to be "internal" to the project.
+<p>Because an IDE typically has a tree view of the project's contents, starting with a main node representing the base path of the project, such "first-class" files must be showed in this tree, where the main node represents the source base tree, and the hierarchical sub-nodes represent the subdirectories identified by all the project files; that is, all the sub-nodes must be named, and organized, as dictated by the single components of every file's path, relative to the source base directory.
+<p>Other IDEs may have a different way to show the project files, but anyway the internal files must be treated as the ones that a user would traditionally add manually to the project.
+<p>Conversely, external files (that is, not residing under the source base directory) must be showed in a different node, for example a node external to the project's main node, or a special sub-node inside the project. They must be showed in a hierarchical view based on their paths, just like internal files. The rationale for the existence of such files is that the source directory may itself be a subdirectory of the global project directory, and the user may want the IDE to show other files other than the sources, like for example documentation files, which can be therefore opened and edited.
+<p>The IDE must offer the user a way of editing the project's Makefile, too, by listing it among the other files, or better in a privileged fashion. When the user modifies and save the Makefile, a Makefile re-parsing must be triggered, as explained later.
+
+<h2>How the IDE parses the HalfIDE information</h2>
+<p>The IDE must call the "make" command with the "HalfIDE" target to get the textual information defining the project, but there are several aspects to take into account:
+<ul>
+<li>The Makefile itself can have a different name than the default ones recognized by the make command (as "Makefile" or "makefile".)
+<li>The user may want to use another make command than the default system command "make".
+<li>The Makefile may have to be invoked with specific variable assignments. We will see that this is how HalfIDE specifies different project "configurations", that is special variables that, when overridden by the caller, change the parameters returned by the HalfIDE protocol (examples are "Debug" and "Release" configurations). The existing configurations are defined by HalfIDE itself, so they are not known when parsing the Makefile for the first time.
+<li>The make command can print spurious text, like "make: Entering directory ..." that can compromise the parsing of HalfIDE information. We will see <a href="#spurious">here</a> how to deal with that.
+</ul>
+<p>Given all this, the IDE must perform the following operations every time it has to parse, or re-parse, the project information.
+<p>1) First, the Makefile absolute path must be split in two parts: the directory and the file name.
+<p>2) Then, the IDE must change the current directory to the one containing the Makefile (that is, it must set the working directory). That way the make command will not be called with the "-C" option, or equivalent, in order to remove one source of spurious output as seen in the previous example.
+<p>3) Then the make command is called a first time in the simple form:
+<pre>
+&lt;make_command&gt; -f &lt;Makefile_name&gt; HalfIDE
+</pre>
+and the HalfIDE output parsed. "&lt;make_command&gt;" is the current make command, that can be redefined by the HalfIDE project itself, or "make" as its initial value.
+<p>4) If the make command to be used, as read from the HalfIDE parameters just parsed, is different from the current one, the previous step is repeated with the correct make executable, the new make executable stored for future calls, and the output re-parsed.
+The make executable may change if the user redefines it through the proper parameter (explained later), or removes its definition after previously having set it. In these cases the previous step must be repeated because different make implementations may give different results. If the make executable has not changed from the previous step, this step is not performed.
+<p>5) Now that the IDE has all the correct information, if one or more configurations are defined, it must call the make command again with the variables defined by the chosen configuration (and the proper make executable), in a form similar to
+this:
+<pre>
+&lt;make_command&gt; -f &lt;Makefile_name&gt;  AAA=a  BBB=b  HalfIDE
+</pre>
+The HalfIDE output must then be re-parsed again. If no configurations are defined this step is not performed. In this case the project has one only default configuration.
+<p>The configuration to be chosen can be dictated by the user, for example by using a menu entry to change the current configuration. When first opening the project, the first configuration to be used is chosen by the IDE. The IDE should remember the last configuration used in the past by the user for that Makefile, provided it still exists in the current HalfIDE parameters. When no past information can be used, the IDE must choose the first one defined in the HalfIDE parameters.
+<p>It can be seen that the make command may need to be invoked up to three times at every (re-)parsing, and at least two in case of configurations defined.
+<p>Of course the IDE must check that the make command returns no error, and that the textual output is valid HalfIDE syntax.
+
+<h2>HalfIDE information re-parsing</h2>
+<p>Every time the Makefile needs to be re-parsed, it must be done with all the steps listed in the previous section, because any of its parameters might have changed, including the make executable and the list of existing configurations.
+<p>After every re-parsing, the IDE must adapt all its contents according to the new information.
+<p>Obvious cases when the IDE must re-parse the HalfIDE information are when the user modifies the Makefile, and when the user changes the current project configuration, if any. Other cases not explicitly provided here may need to be considered, too.
+<p>The IDE should monitor the Makefile to detect if it's modified, and trigger a re-parsing automatically, with or without user's confirmation. This is needed because the user can edit the Makefile outside the IDE.
+<p>The IDE must also offer the user a quick way of manually triggering a re-parsing of the Makefile, if possible visually near the GUI element used to edit the Makefile. This is because the project information can change even if the Makefile does not. For example, in the example Makefile provided, the list of source files is created automatically by finding all the files of a given type in the source base directory. In that case, simply adding a file to the directory would change the list of project files returned by the the HalfIDE parameters.
+
+<h2>Invoking make other than for parsing HalfIDE information</h2>
+<p>Of course an IDE must offer the user a way of building/cleaning/etc the project, as for any other projects. For HalfIDE projects this is done by calling make with a specific target, or with no target for the default one.  This corresponds to several possible "actions" that can be performed. These actions (and their targets) are themselves defined by the HalfIDE project. If not given, the default must consist of the following actions available:
+<ul>
+<li>"Build", corresponding to calling make with no target
+<li>"Clean", corresponding to calling make with "clean" target
+</ul>
+<p>Of course the make invocation must keep into account the correct make executable, the actual Makefile name and the variable definitions corresponding to the current configuration, much like calling the "HalfIDE" target. The only difference is that the IDE may or may not choose to change the working directory to the Makefile's one.
+<p>Examples:
+<pre>
+&lt;make_command&gt; -f &lt;Makefile_name&gt;  AAA=a  BBB=b
+&lt;make_command&gt; -f &lt;Makefile_name&gt;  AAA=a  BBB=b clean
+</pre>
+
+
+<h2 id="spurious">How to deal with make's spurious output</h2>
+<p>As said, make can output spurious text when called with the "HalfIDE" target, compromising the parsing of HalfIDE parameters.
+<p>An example is lines starting with "make: " and followed by a log message (but note that the executable's name may vary).
+<p>Correctly parsing all the possible cases would not be feasible. An alternative might be ignoring all the text not recognized as a valid HalfIDE parameter, but this is not advisable, because it can hide subtle syntax errors and lead to parameters being ignored.
+<p>Even if great care is taken when calling the make executable, examples of spurious text can be even more subtle. For example, in the sample project provided here, the Makefile includes the so-called dependency files, that is files with ".d" extension listing the dependencies of every C++ source file with respect to its included header files, so to rebuild all the files that depend on the changed ones. These files are in turn automatically generated by the compiler, via proper parameters (see GNU make documentation).
+<p>If these files do not exist yet when calling make with the "HalfIDE" target, and because the Makefile itself depend on them, they are created before executing the HalfIDE target, and so they are printed to the screen.
+<p>For all these reasons, it's strongly suggested to use some special options when calling make with the "HalfIDE" target, so to suppress log messages and the echo of the executed commands. For POSIX-compliant make implementations, this is done by the "-s" option.
+
+
+
+<h2>HalfIDE protocol specification</h2>
+
+<p>The textual information returned by the make invocation is composed of lines, where each line contains one or more tokens, separated by whitespaces. As seen in a previous section, tokens containing whitespaces must be enclosed in double quotes.
+<p>The first token is a parameter name, followed by zero or more values, so that a parameter has an associated list of values, that can be empty, contain one only element or more than one, as specified by every parameter.
+<p>For convenience, a parameter can be split to several lines; in this case, the associated values are simply appended to the current list for that parameter. In this way a long list can be split to several blocks. For example, the two following blocks are equivalent:
+<pre>
+param1  aaa  bbb
+param1  ccc
+
+...equivalent to:
+
+param1  aaa  bbb  ccc
+</pre>
+<p>The IDE must preserve the order of the values of every parameter, even when they could better fit a "key → value" map, and preferably present them to the user in the given order.
+<p>The following table lists all the parameters and the number of values they can have.
+<p>Parameters allowing zero values are non-mandatory and can be omitted if the user does not want to associate values to them. Writing the parameter's name alone with no values is equivalent to omitting it, that is both cases are equivalent to adding no values to the current list for that parameter.
+<p>Some parameters allowing zero values have a default value list, that is value(s) assumed by default if the user specifies no values.
+<p>After the table listing the existing parameters, each of them is explained in detail.
+<p>Note: all the parameter names are case-sensitive.
+<p>
+
+
+<table border="1">
+<tr><th>Parameter</th><th>Number of values</th><th>Default value(s)</th></tr>
+<tr><td>projectName</td><td>1</td><td></td></tr>
+<tr><td>sourceBaseDir</td><td>1</td><td></td></tr>
+<tr><td>makeCommand</td><td>0-1</td><td>make</td></tr>
+<tr><td>projectFiles</td><td>1+</td><td></td></tr>
+<tr><td>actions</td><td>0+</td><td>Build|  Clean|clean</td></tr>
+<tr><td>configurations</td><td>0+</td><td></td></tr>
+<tr><td>compiler</td><td>0-1</td><td></td></tr>
+<tr><td>compilerDefines</td><td>0+</td><td></td></tr>
+<tr><td>compilerIncludes</td><td>0+</td><td></td></tr>
+<tr><td>compilerOptions</td><td>0+</td><td></td></tr>
+<tr><td>runExe</td><td>0-1</td><td></td></tr>
+<tr><td>runDir</td><td>0-1</td><td><big>.</big></td></tr>
+<tr><td>runArgs</td><td>0+</td><td></td></tr>
+<tr><td>debugDebugger</td><td>0-1</td><td></td></tr>
+<tr><td>debugExe</td><td>0-1</td><td>value of "runExe"</td></tr>
+<tr><td>debugDir</td><td>0-1</td><td>value of "runDir"</td></tr>
+<tr><td>debugArgs</td><td>0+</td><td>value of "runArgs"</td></tr>
+<tr><td>debugCommands</td><td>0+</td><td></td></tr>
+<tr><td>debugIsRemote</td><td>0-1</td><td>0</td></tr>
+<tr><td>preferences</td><td>0+</td><td></td></tr>
+<tr><td>openExternally</td><td>0+</td><td></td></tr>
+<tr><td>fileHighlight</td><td>0+</td><td></td></tr>
+</table>
+
+
+
+<h2>General project parameters</h2>
+
+<h3>projectName</h3>
+<p>The name of the project, to be used in all the relevant places in the IDE.
+It can also be used as the name of the main node in the project's tree view.</p>
+
+<h3>sourceBaseDir</h3>
+<p>The source base directory, as explained in the previous sections.
+It can also be a relative path, in this case it is interpreted relative to the
+default directory (Makefile's directory).</p>
+
+<h3>makeCommand</h3>
+<p>The make executable to be used. If omitted, the default "make" command is used,
+as explained in the previous sections.</p>
+
+<h3>projectFiles</h3>
+<p>The list of all the files composing the project, that is the files the user wants
+to be shown by the IDE for opening and editing. As explained in the previous sections,
+they can be given in relative or absolute paths, and can be internal or external files.</p>
+
+<h3>actions</h3>
+<p>The actions that the IDE must offer, typically (but not limited to) for building
+and cleaning the project.
+<p>Every value represents an action. Every action is composed of one or two tokens, separated by the "|" character.
+The first token is the action's name, as must be presented to the user; the second token
+is the target to be called on the Makefile to implement such action.
+The target can be omitted, to indicate that the Makefile must be called with no targets
+(default target).</p>
+<p>For example, if this parameter is not provided, it defaults to:
+<pre>
+Build|  Clean|clean
+</pre>
+<p>That is, a "Build" action which calls the default target, and a "Clean" action which
+calls the "clean" target.</p>
+<p>Note 1: if the last token is empty the "|" character can be used or can be omitted. The parser must
+correctly understand both forms.
+<p>Note 2: if the action's name contains whitespaces, the value must be enclosed in double quotes,
+as for the normal syntax rules.
+
+<h3>configurations</h3>
+<p>The configurations, if any, defined in the project. A configuration consists of a list
+of variable definitions to be passed to the make command (overridden variables).
+<p>Setting different variables and/or values allows the project to be completely different
+among different configurations. For example, one can have a "Debug" and a "Release" configuration,
+depending on a specific variable's value, and according to it a series of changes can be made,
+like the compiler options, the output directory and the like.
+<p>Apart from this example, this is a very generic method, and configurations can be used to
+change everything in the HalfIDE project, including for example the list of source files,
+the source base directory and so on. This is why the IDE must re-configure itself when switching configuration, just like
+the first time the project is opened, and this is in general true for every event in which
+the Makefile is re-parsed.
+<p>Every value of the "configurations" parameter is composed by one or more tokens, separated
+by the "|" character. The first token is the configuration's name, as must be presented to the user;
+the remaining tokens are the variable definitions to be passed to the make command.
+<p>As an example, supposing that the Makefile has a "RELEASE" variable set to 0 by default:
+<pre>
+configurations Debug|
+configurations Release|RELEASE=1
+configurations "Release Distribution|RELEASE=1|COOL_LOGO=1"
+</pre>
+<p>Here the three values are split on several lines for clarity, and the first one specifies no
+variable definitions, to just use the default ones as defined in the Makefile. As a further example, the last value
+in the previous example would cause the Makefile to be called as this:
+<pre>
+&lt;make_command&gt; -f &lt;Makefile_name&gt;  RELEASE=1  COOL_LOGO=1  &lt;target&gt;
+</pre>
+<p>See the notes about syntax in the "actions" parameters.
+<p>Note that POSIX-compliant make implementations only allow variable definitions in command-line in the form "macro=value".
+
+
+
+<h2>Parameters informing the IDE about the compilation process</h2>
+
+<p>For an IDE to provide convenient features like auto-completion, symbol following, and the like,
+it must know how the sources are being compiled: the compiler itself, the include directories,
+the defined symbols, and so on.
+<p>When the IDE is managing the project, it obviously has all the information it needs. But in the case
+of an HalfIDE project, the IDE does not know what the Makefile will do once called.
+<p>The following parameters try to give the IDE as much information as possible to ease its task of
+correctly parsing the code.
+<p>It must be noted that such parameters must not in any way influence the compilation process, or alter
+the files in the source tree, but must only be used by the background tasks of the IDE itself.
+<p>Note: these options are currently focused on C/C++ languages.
+
+<h3>compiler</h3>
+<p>The compiler used by the compilation process, as called by the Makefile (examples: "g++", "arm-none-eabi-gcc")
+
+<h3>compilerDefines</h3>
+<p>The list of defined macros. For better portability among different compilers,
+this parameter should return the list of symbols without the compiler's options prepended, like:
+<pre>
+AAA  BBB=1  CCC=3.4
+</pre>
+<p>In the Makefile it's easy to prepend the correct option when actually passing them to the compiler, with a substitution rule.
+<p>Anyway, as a matter of simplicity, the symbols can be returned as already "decorated" with the proper compiler option, like:
+<pre>
+-DAAA  -DBBB=1  -DCCC=3.4
+</pre>
+<p>The IDE must be prepared to recognize both forms for every value, and use them accordingly.
+
+<h3>compilerIncludes</h3>
+<p>The list of directories to be used as default when searching for included files. For better portability among different compilers, this parameter should return the list of directories without the compiler's options prepended, like:
+<pre>
+./aaa/  ./aaa/bbb
+</pre>
+(directories can be relative, their meaning is the same as when make is invoked manually).
+<p>In the Makefile it's easy to prepend the correct option when actually passing them to the compiler, with a substitution rule.
+<p>Anyway, as a matter of simplicity, the directories can be returned as already "decorated" with the proper compiler option, like:
+<pre>
+-I./aaa/  -I./aaa/bbb
+</pre>
+<p>The IDE must be prepared to recognize both forms for every value, and use them accordingly.
+
+<h3>compilerOptions</h3>
+<p>The list of all the remaining options the Makefile is using when calling the compiler, that are not included in the previous ones.
+<p>These options, together with the previous ones, should include all the options that are actually used in the Makefile when compiling a file, as long as they can be generalized to all the source files. They should not include options specific to the linking process.
+<p>These options are necessarily compiler-specific.
+
+
+<h2>Parameters for running the program</h2>
+
+<p>The following parameters allow the IDE to offer the user a "Run" action (or equivalent notation) to run the
+just built program.
+
+<h3>runExe</h3>
+<p>The executable to be run, which will likely be the final executable built by the Makefile.
+<p>The executable can have a relative path, and as always it is relative to the Makefile's directory.
+<p>If this option is set, the IDE must offer the user a way to run the program, but always subject to the
+usual IDE's restrictions, such as correctly recompiling the program if changed, and the like.
+
+<h3>runDir</h3>
+<p>The working directory to be set before running the executable. Usual rules apply for relative paths. Its default is ".", that is the Makefile's directory.
+
+<h3>runArgs</h3>
+<p>The arguments to be passed to the executable.
+
+
+<h2>Parameters for debugging the program</h2>
+
+<p>The following parameters allow the IDE to offer the user a "Debug" action (or an equivalent notation) to run the
+just built program in debug mode, but of course only if the IDE provides this facility.
+<p>Note that this action is not tied to a special project configuration, even if some of them exist that are called "Debug" and "Release", but must be performed using the information from the current configuration.
+
+<h3>debugDebugger</h3>
+<p>The debugger to be used (example: "gdb", "arm-none-eabi-gdb")
+
+<h3>debugExe</h3>
+<p>The executable to be run in debug mode, much like "runExe" is for running the program in normal mode.
+<p>If this option and the "debugDebugger" option are set, directly or through default values, and if the IDE supports debugging programs, then the IDE must offer the user a way to debug the program, but always subject to the usual IDE's restrictions.
+
+<h3>debugDir</h3>
+<p>The working directory to be set before debugging the executable. Usual rules apply for relative paths.
+
+<h3>debugArgs</h3>
+<p>The arguments to be passed to the executable when debugging.
+
+<h3>debugCommands</h3>
+<p>Optional commands to be passed to the debugger, like for example "monitor" commands for remote debugging. Usually the same can be accomplished with a special init file in the working directory in which the debugger is called ("debugDir".)
+
+<h3>debugIsRemote</h3>
+<p>Whether the debugging is remote. It can assume the values 0 or 1 (meaning false and true respectively). This is needed because commands to be issued by the IDE to the debugger can be different for local and remote debugging.
+
+
+<h2>Experimental parameters</h2>
+
+<p>The following parameters are currently considered experimental, and could be better standardized in future versions of the protocol.
+
+<h3>preferences</h3>
+<p>Single IDE's preferences to be overridden for the specific project. Because this is very IDE-specific, the syntax for every value is:
+<pre>
+&lt;ide&gt;:&lt;preference&gt;|&lt;value&gt;
+</pre>
+For example:
+<pre>
+preferences eclipse:tab_width|4
+</pre>
+<p>To use this option, a list is needed with all the supported values for every IDE. Options overridden in this way should be listed in read-only mode in the IDE's configuration dialogs.
+
+<h3>openExternally</h3>
+<p>This option tells the IDE to open externally the files matching a given regular expression, instead of using its editor.
+<p>The syntax for every value is:
+<pre>
+&lt;regex&gt;|&lt;program&gt;
+</pre>
+<p>All the files whose path matches "regex" should be opened with the "program" program. The program can be omitted, in this case the default system's program is used.
+<p>Example:
+<pre>
+openExternally  .*\.png|  .*qt/.*\.ui|designer
+</pre>
+<p>An IDE can choose to not obey this parameter, because it can already have different mechanisms in place to handle that.
+
+<h3>fileHighlight</h3>
+<p>This option suggests the IDE how to syntax-highlight the files matching a given regular expression, if it can not be determined univocally.
+<p>The syntax for every value is:
+<pre>
+&lt;regex&gt;|&lt;syntax&gt;
+</pre>
+<p>All the files whose path matches "regex" should be syntax-highlighted with the "syntax" format. This "syntax" format needs to be defined in some standardized way.
+<p>Example:
+<pre>
+fileHighlight  .*\.[sS]|arm_gnu_assembly
+</pre>
+
+
+
+
+<h1>Expected IDE's behavior</h1>
+
+<p>When managing an HalfIDE project, the IDE should try as much as possible to behave like when managing a native project. Here we will discuss some aspects, but that must be interpreted in the most general way.
+<p>First of all, every time the HalfIDE information is re-parsed, the IDE should give the user a smooth transition, so that the current IDE status does not change too much if the project has not changed significantly.
+<p>Provided that almost all the IDEs have a tree view of the project contents, the user may have expanded or collapsed the single items, up to a given status. When reconfiguring, the IDE should keep that status unchanged, at least for the nodes that still exist unaltered in the project, so to not force the user to re-expand all of them again.
+<p>IDEs usually keep several files opened in their editor, by means of tabs and the like. The set of open files should be left unaltered after a reconfiguration. If an open file does not exist anymore in the list of project files, the IDE should address this fact, perhaps in the same way it reacts to an open file being deleted outside the IDE's control. It should take into account if the file still actually exists in the filesystem, or not.
+<p>About the various configuration dialogs that exist in an IDE, the ones regarding aspects not managed by HalfIDE must of course be kept available (editor settings, look and feel, etc.)
+<p>For parts of configuration managed by HalfIDE, and so out of the IDE's control, the IDE should at least present them to the user, as a reminder of the current project's configuration. This holds for all the parameters defined in this standard. The IDE can present a summary window with the parameters listed, or use the usual configuration dialogs, but with the relevant parameters in read-only mode.
+<p>The building of the program (actions defined by the HalfIDE protocol) must be managed as in all the other cases when the IDE would  call a Makefile or directly compile a file: the output should be parsed for errors and warnings, and it should offer convenience links to the location of such messages (if the IDE ever offers such facilities).
+<p>All the IDEs are different, and one cannot know how all of them are internally implemented. So an IDE choosing to implement the HalfIDE protocol can implement it to various degrees in terms of the optional parts ("should" statements), while it must implement the mandatory parts ("must" statements). An IDE should explicitly declare in its documentation which version of the HalfIDE protocol it implements, which optional parts it offers and which not, and what's its behavior in the cases not rigidly coded.
+
+
+
+
+<h1>Sample implementation</h1>
+
+<p>I'm providing some sample software to test the concepts hereby introduced.
+<p>The first one is "sample_project", which is composed of dummy source files doing nothing, apart from writing a string to the standard output, but its "build" directory contains a Makefile implementing the HalfIDE protocol.
+<p>The second one is a "fake" and incomplete IDE, written with Qt libraries, that you can use to open the Makefile from the mentioned test project, and perform some simple actions. You will notice that the test program is compiled slightly differently in one of the configurations, thanks to variable overriding.
+<p><img src="pictures/fakeide.png" alt="fake IDE screenshot">
+<p>Please note that this is only a test software, and not meant to be a reference implementation. <b>It does not even fully implement the HalfIDE protocol</b>, because my purpose here is not to create another functional IDE.
+<p>The code for the IDE, and the Makefile used as a test, are commented for better clarity. The code is released under public domain, in case someone wants to use some parts of it, like the code parsing the project information. The IDE's code requires a C++11 compiler.
+<p>The fake IDE uses icons, for the buttons and the project tree, that are returned by your current desktop theme (see <a href ="http://doc.qt.io/qt-5/qicon.html#fromTheme">QIcon::fromTheme</a>). This is a simplified method to not include picture files with your code, and to have icons consistent with your desktop, but it only works on GNU/Linux systems.
+
+
+</body>
+</html>
+
