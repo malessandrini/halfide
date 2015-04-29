@@ -28,7 +28,7 @@ public:
 	void updateProject(HalfideProject const *);
 protected:
 	void clear();
-	TreeItem *itemBaseDir, *itemExtraDir;
+	TreeItem *itemBaseDir, *itemExtraDir = nullptr;
 	TreeItem* getParent(std::vector<QString> const &subdirs);
 	std::map<std::vector<QString>, TreeItem*> subdirItems;  // list of subdirs -> tree item
 	std::map<QString, TreeItem*> fileItems;  // file path -> tree item (leaf)

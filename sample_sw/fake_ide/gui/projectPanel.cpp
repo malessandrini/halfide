@@ -54,6 +54,12 @@ ProjectPanel::ProjectPanel(QWidget *parent):
 
 
 void ProjectPanel::updateProject(HalfideProject const *prj) {
+	// find which items are currently expanded, to restore the same status after re-creating the view
+	std::vector<std::vector<QString>> expandedItems;
+	for (auto const &i: subdirItems)
+		if (i.second->isExpanded()) expandedItems.push_back(i.first);
+	bool extraExpanded = itemExtraDir && itemExtraDir->isExpanded();
+	// re-create the view
 	clear();  // remove all items
 	itemBaseDir = new TreeItem(this, prj->projectName, QIcon::fromTheme("folder"));  // root item for internal files
 	itemBaseDir->setToolTip(0, prj->makefile);
@@ -79,6 +85,12 @@ void ProjectPanel::updateProject(HalfideProject const *prj) {
 		}
 	}
 	itemBaseDir->setExpanded(true);
+	// restore expanded nodes, if they still exist
+	for (auto const &i: expandedItems) {
+		auto s = subdirItems.find(i);
+		if (s != subdirItems.end()) s->second->setExpanded(true);
+	}
+	if (itemExtraDir && extraExpanded) itemExtraDir->setExpanded(true);
 }
 
 
