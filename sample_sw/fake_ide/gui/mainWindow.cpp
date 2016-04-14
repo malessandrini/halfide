@@ -341,11 +341,11 @@ void MainWindow::actionProjectInformation() {
 	text += "Debug debugger: " +   project->debugDebugger + "\n";
 	text += "Debug executable: " + project->debugExe + "\n";
 	text += "Debug directory: "  + project->debugDir + "\n";
-	text += "Degbug arguments:\n    ";
+	text += "Debug arguments:\n    ";
 	for (auto const &s: project->debugArgs)
 		text += s + "  ";
 	text += "\n";
-	text += "Degbug commands:\n    ";
+	text += "Debug commands:\n    ";
 	for (auto const &s: project->debugCommands)
 		text += s + "  ";
 	text += "\n";
